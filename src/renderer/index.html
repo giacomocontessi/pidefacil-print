@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>PideFácil Printer App</title>
+    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self' https://accounts.google.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data:; connect-src 'self' https://api.pidefacil.app  https://accounts.google.com; script-src-elem 'self' https://accounts.google.com"
+      />
+      <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "D:\\pidefacil-print\\my-app\\src\\logs\\.e992118a109f136c28fb89c83077e02ba5b67a2f-audit.json",
+    "files": [
+        {
+            "date": 1724285859828,
+            "name": "D:\\pidefacil-print\\my-app\\src\\logs\\2024-08-21-app.log",
+            "hash": "5460aaddc3a1b5d1aed35b3f63f045c5aa5deb05614566c256f485843ee96f99"
+        }
+    ],
+    "hashType": "sha256"
+}
