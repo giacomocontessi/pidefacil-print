@@ -1,11 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron';
-import { join } from 'path';
-import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import Store from 'electron-store';
-import fs from 'fs';
-import { ThermalPrinter, PrinterTypes, CharacterSet, BreakLine } from 'node-thermal-printer';
-import icon from '../../resources/icon.png'
-const electron = typeof process !== 'undefined' && process.versions && !!process.versions.electron;
+const { app, shell, BrowserWindow, ipcMain, Menu } = require('electron');
+const { join } = require('path');
+const path = require('path');
+const { electronApp, optimizer, is } = require('@electron-toolkit/utils');
+const Store = require('electron-store');
+const fs = require('fs');
+const icon = path.join(__dirname, '../../resources/icon.png');
+// const printer = require('printer');
+
+// Import escpos modules
+const escpos = require('escpos');
+// For USB printers
+escpos.USB = require('escpos-usb');
+// For Network printers, you would use:
+// const Network = require('escpos-network');
 
 const store = new Store();
 let mainWindow;
@@ -137,79 +144,87 @@ function createWindow() {
     console.log('read logs placeholder');
   });
 
-  // Method 2: Thermal Printer (Using node-thermal-printer)
 // Method 2: Thermal Printer (Using node-thermal-printer)
 ipcMain.on('print-to-printer-thermal', async (event, { printerName, data }) => {
   try {
-    console.log('About to start ThermalPrinter function on index.js');
-    
-    const printer = new ThermalPrinter({
-      type: PrinterTypes.EPSON, // Replace with your printer type (e.g., STAR, EPSON, etc.)
-      interface: `printer:${printerName}`,
-      characterSet: CharacterSet.PC852_LATIN2, // Set a common character set explicitly
-      removeSpecialCharacters: false, // Set to true or false based on your needs
-      lineCharacter: "=",
-      breakLine: BreakLine.WORD,
-      options: {
-        timeout: 5000,  // Connection timeout (optional)
-      },
-      driver: require(electron ? 'electron-printer' : 'printer')
-      // driver: 'printer'
-    });
+    console.log('About to start printing using the printer module');
 
-    // Use for...of loop to process each item in the data array
-    for (const item of data) {
+    // Prepare the raw ESC/POS commands as a Buffer
+    let commandsArray = [];
+
+    data.forEach((item) => {
       switch (item.type) {
         case 'text':
-          printer.setTextNormal(); // Reset to normal text
-          if (item.style) {
-            if (item.style.fontWeight === '700') {
-              printer.bold(true); // Set text to bold
-            }
-            if (item.style.textAlign) {
-              if (item.style.textAlign === 'center') {
-                printer.alignCenter();
-              } else if (item.style.textAlign === 'left') {
-                printer.alignLeft();
-              } else if (item.style.textAlign === 'right') {
-                printer.alignRight();
-              }
-            }
-            if (item.style.fontSize) {
-              const size = parseInt(item.style.fontSize);
-              if (!isNaN(size)) {
-                printer.setTextSize(size, size); // Set the font size
-              }
+          // Start with initializing printer and setting default styles
+          commandsArray.push(Buffer.from('\x1B\x40')); // Initialize printer
+          
+          // Set alignment
+          if (item.style && item.style.textAlign) {
+            if (item.style.textAlign === 'center') {
+              commandsArray.push(Buffer.from('\x1B\x61\x01')); // Center alignment
+            } else if (item.style.textAlign === 'right') {
+              commandsArray.push(Buffer.from('\x1B\x61\x02')); // Right alignment
+            } else {
+              commandsArray.push(Buffer.from('\x1B\x61\x00')); // Left alignment
             }
           }
-          printer.println(item.value);
-          printer.bold(false); // Reset bold after printing
+
+          // Set bold
+          if (item.style && item.style.fontWeight === '700') {
+            commandsArray.push(Buffer.from('\x1B\x45\x01')); // Bold on
+          } else {
+            commandsArray.push(Buffer.from('\x1B\x45\x00')); // Bold off
+          }
+
+          // Set font size
+          if (item.style && item.style.fontSize) {
+            const size = parseInt(item.style.fontSize);
+            const sizeCommand = size === 2 ? '\x1D\x21\x11' : '\x1D\x21\x00'; // Double size or normal
+            commandsArray.push(Buffer.from(sizeCommand));
+          } else {
+            commandsArray.push(Buffer.from('\x1D\x21\x00')); // Normal size
+          }
+
+          // Add the text
+          commandsArray.push(Buffer.from(item.value + '\n', 'utf8'));
+
+          // Reset styles
+          commandsArray.push(Buffer.from('\x1B\x61\x00')); // Left alignment
+          commandsArray.push(Buffer.from('\x1B\x45\x00')); // Bold off
+          commandsArray.push(Buffer.from('\x1D\x21\x00')); // Normal size
           break;
 
-        case 'qrCode':
-          printer.printQR(item.value, { size: item.size || 4, correction: 'M' });
-          break;
-
-        case 'image':
-          await printer.printImage(item.value); // item.value should be the path to the image
-          break;
-
-        // Add other cases as needed, like 'barCode', 'table', etc.
-
+        // Handle other types like 'qrCode', 'image' if needed
         default:
           console.error(`Unknown item type: ${item.type}`);
       }
-    }
+    });
 
-    printer.cut();
-    await printer.execute();
-    event.reply('print-response', { success: true });
+    // Add cut command at the end
+    commandsArray.push(Buffer.from('\x1D\x56\x41')); // Cut paper
+
+    // Concatenate all buffers
+    const commandsBuffer = Buffer.concat(commandsArray);
+
+    // Send the raw commands to the printer
+    // printer.printDirect({
+    //   data: commandsBuffer,
+    //   printer: printerName,
+    //   type: 'RAW',
+    //   success: function (jobID) {
+    //     console.log('Printed with job ID: ' + jobID);
+    //     event.reply('print-response', { success: true });
+    //   },
+    //   error: function (err) {
+    //     console.error('Error printing:', err);
+    //     event.reply('print-response', { success: false, error: err.message });
+    //   },
+    // });
   } catch (error) {
     console.error('Failed to print ticket:', error);
     event.reply('print-response', { success: false, error: error.message });
   }
 });
-
   
 }  
 
